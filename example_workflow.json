@@ -1,0 +1,39 @@
+{
+  "last_node_id": 2,
+  "last_link_id": 1,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "ParseInputNode",
+      "pos": [100, 100],
+      "size": {"0": 300, "1": 200},
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": {
+        "json_input": "{\n    \"scenes\": [\n        {\n            \"scene_order\": \"0\",\n            \"type\": \"cover\",\n            \"scene_url\": \"https://snapsai.blob.core.windows.net/stories/ToyStory/FinalOutput/Story/00.png\",\n            \"mask_url\": \"https://snapsai.blob.core.windows.net/stories/ToyStory/FinalOutput/Masks/00.png\"\n        },\n        {\n            \"scene_order\": \"1\",\n            \"type\": \"scene\",\n            \"scene_url\": \"https://snapsai.blob.core.windows.net/stories/ToyStory/FinalOutput/Story/01.png\",\n            \"mask_url\": \"https://snapsai.blob.core.windows.net/stories/ToyStory/FinalOutput/Masks/01.png\"\n        },\n        {\n            \"scene_order\": \"4\",\n            \"type\": \"cover\",\n            \"scene_url\": \"https://snapsai.blob.core.windows.net/stories/ToyStory/FinalOutput/Story/04.png\",\n            \"mask_url\": \"https://snapsai.blob.core.windows.net/stories/ToyStory/FinalOutput/Masks/04.png\"\n        }\n    ],\n    \"face_url\": \"https://snapsai.blob.core.windows.net/input/Faces/OMar123.JPG\",\n    \"generation_id\": \"PRVSHPTST01\",\n    \"kid_name\": \"OMAR\",\n    \"demo_text\": \"MOHAMED\"\n}"
+      },
+      "properties": {},
+      "widgets_values": [
+        "{\n    \"scenes\": [\n        {\n            \"scene_order\": \"0\",\n            \"type\": \"cover\",\n            \"scene_url\": \"https://snapsai.blob.core.windows.net/stories/ToyStory/FinalOutput/Story/00.png\",\n            \"mask_url\": \"https://snapsai.blob.core.windows.net/stories/ToyStory/FinalOutput/Masks/00.png\"\n        },\n        {\n            \"scene_order\": \"1\",\n            \"type\": \"scene\",\n            \"scene_url\": \"https://snapsai.blob.core.windows.net/stories/ToyStory/FinalOutput/Story/01.png\",\n            \"mask_url\": \"https://snapsai.blob.core.windows.net/stories/ToyStory/FinalOutput/Masks/01.png\"\n        },\n        {\n            \"scene_order\": \"4\",\n            \"type\": \"cover\",\n            \"scene_url\": \"https://snapsai.blob.core.windows.net/stories/ToyStory/FinalOutput/Story/04.png\",\n            \"mask_url\": \"https://snapsai.blob.core.windows.net/stories/ToyStory/FinalOutput/Masks/04.png\"\n        }\n    ],\n    \"face_url\": \"https://snapsai.blob.core.windows.net/input/Faces/OMar123.JPG\",\n    \"generation_id\": \"PRVSHPTST01\",\n    \"kid_name\": \"OMAR\",\n    \"demo_text\": \"MOHAMED\"\n}"
+      ]
+    },
+    {
+      "id": 2,
+      "type": "SaveImage",
+      "pos": [500, 100],
+      "size": {"0": 210, "1": 58},
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": {
+        "images": ["1", 0]
+      },
+      "properties": {},
+      "widgets_values": ["ComfyUI"]
+    }
+  ],
+  "links": [
+    [1, 1, 0, 2, 0]
+  ]
+} 
