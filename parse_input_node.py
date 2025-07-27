@@ -238,7 +238,7 @@ class ParseInputNode:
             
             return aligned_scene_images, aligned_mask_images, face_image, has_loading_error
     
-    async def parse_input(self, json_input: str) -> Tuple[torch.Tensor, torch.Tensor, int, torch.Tensor, str, str, str, str]:
+    def parse_input(self, json_input: str) -> Tuple[torch.Tensor, torch.Tensor, int, torch.Tensor, str, str, str, str]:
         """Parse JSON input and return the specified outputs with async downloads"""
         
         try:
@@ -264,8 +264,8 @@ class ParseInputNode:
             # Sort scenes by scene_order
             scenes.sort(key=lambda x: int(x.get("scene_order", 0)))
             
-            # Download all images asynchronously
-            scene_images, mask_images, face_image, has_loading_error = await self._download_all_async(data)
+            # Download all images asynchronously using asyncio.run()
+            scene_images, mask_images, face_image, has_loading_error = asyncio.run(self._download_all_async(data))
             
             # If there was a loading error, return error state
             if has_loading_error:
