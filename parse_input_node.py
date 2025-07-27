@@ -29,7 +29,6 @@ class ParseInputNode:
         self.output_dir = "output"
         self.type = "output"
         self.output_node = True
-        self._session = None
         
     @classmethod
     def INPUT_TYPES(cls):
@@ -39,237 +38,208 @@ class ParseInputNode:
             }
         }
     
-    RETURN_TYPES = ("IMAGE", "MASK", "INT", "IMAGE", "STRING", "STRING", "STRING")
-    RETURN_NAMES = ("segmented_scenes", "segmented_masks", "total_scenes", "face_image", "generation_id", "kid_name", "demo_text")
+    RETURN_TYPES = ("IMAGE", "MASK", "INT", "IMAGE", "STRING", "STRING", "STRING", "STRING")
+    RETURN_NAMES = ("segmented_scenes", "segmented_masks", "total_scenes", "face_image", "generation_id", "kid_name", "demo_text", "scene_orders")
     FUNCTION = "parse_input"
     CATEGORY = "Snaps"
     
-    @lru_cache(maxsize=100)
-    def _load_image_cached(self, url_hash: str, url: str) -> Optional[np.ndarray]:
-        """Cached version of image loading to avoid re-downloading same images"""
-        try:
-            response = requests.get(url, timeout=10)  # Reduced timeout
-            response.raise_for_status()
-            
-            # Load image from bytes
-            image = Image.open(io.BytesIO(response.content))
-            
-            # Convert to RGB if necessary
-            if image.mode != 'RGB':
-                image = image.convert('RGB')
-            
-            # Convert to numpy array
-            img_array = np.array(image)
-            
-            # Normalize to 0-1 range
-            if img_array.dtype == np.uint8:
-                img_array = img_array.astype(np.float32) / 255.0
-                
-            return img_array
-            
-        except Exception as e:
-            print(f"Error loading image from {url}: {e}")
-            return None
-    
-    def load_image_from_url(self, url: str) -> Optional[np.ndarray]:
-        """Load image from URL and convert to numpy array with caching"""
-        url_hash = hashlib.md5(url.encode()).hexdigest()
-        return self._load_image_cached(url_hash, url)
-    
-    @lru_cache(maxsize=100)
-    def _load_mask_cached(self, url_hash: str, url: str) -> Optional[np.ndarray]:
-        """Cached version of mask loading to avoid re-downloading same masks"""
-        try:
-            response = requests.get(url, timeout=10)  # Reduced timeout
-            response.raise_for_status()
-            
-            # Load image from bytes
-            image = Image.open(io.BytesIO(response.content))
-            
-            # Convert to grayscale
-            if image.mode != 'L':
-                image = image.convert('L')
-            
-            # Convert to numpy array
-            mask_array = np.array(image)
-            
-            # Normalize to 0-1 range
-            if mask_array.dtype == np.uint8:
-                mask_array = mask_array.astype(np.float32) / 255.0
-                
-            # Convert to binary mask (threshold at 0.5)
-            mask_array = (mask_array > 0.5).astype(np.float32)
-                
-            return mask_array
-            
-        except Exception as e:
-            print(f"Error loading mask from {url}: {e}")
-            return None
-    
-    def load_mask_from_url(self, url: str) -> Optional[np.ndarray]:
-        """Load mask from URL and convert to binary mask with caching"""
-        url_hash = hashlib.md5(url.encode()).hexdigest()
-        return self._load_mask_cached(url_hash, url)
-    
-    async def _download_image_async(self, session: aiohttp.ClientSession, url: str) -> Optional[np.ndarray]:
-        """Download image asynchronously"""
-        try:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
-                if response.status == 200:
-                    content = await response.read()
-                    
-                    # Load image from bytes
-                    image = Image.open(io.BytesIO(content))
-                    
-                    # Convert to RGB if necessary
-                    if image.mode != 'RGB':
-                        image = image.convert('RGB')
-                    
-                    # Convert to numpy array
-                    img_array = np.array(image)
-                    
-                    # Normalize to 0-1 range
-                    if img_array.dtype == np.uint8:
-                        img_array = img_array.astype(np.float32) / 255.0
+    async def _download_image_async(self, session: aiohttp.ClientSession, url: str, max_retries: int = 3) -> Optional[np.ndarray]:
+        """Download image asynchronously with retry logic"""
+        for attempt in range(max_retries):
+            try:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                    if response.status == 200:
+                        content = await response.read()
                         
-                    return img_array
-                else:
-                    print(f"Error loading image from {url}: HTTP {response.status}")
-                    return None
-                    
-        except Exception as e:
-            print(f"Error loading image from {url}: {e}")
-            return None
-    
-    async def _download_mask_async(self, session: aiohttp.ClientSession, url: str) -> Optional[np.ndarray]:
-        """Download mask asynchronously"""
-        try:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
-                if response.status == 200:
-                    content = await response.read()
-                    
-                    # Load image from bytes
-                    image = Image.open(io.BytesIO(content))
-                    
-                    # Convert to grayscale
-                    if image.mode != 'L':
-                        image = image.convert('L')
-                    
-                    # Convert to numpy array
-                    mask_array = np.array(image)
-                    
-                    # Normalize to 0-1 range
-                    if mask_array.dtype == np.uint8:
-                        mask_array = mask_array.astype(np.float32) / 255.0
+                        # Load image from bytes
+                        image = Image.open(io.BytesIO(content))
                         
-                    # Convert to binary mask (threshold at 0.5)
-                    mask_array = (mask_array > 0.5).astype(np.float32)
+                        # Convert to RGB if necessary
+                        if image.mode != 'RGB':
+                            image = image.convert('RGB')
                         
-                    return mask_array
-                else:
-                    print(f"Error loading mask from {url}: HTTP {response.status}")
-                    return None
-                    
-        except Exception as e:
-            print(f"Error loading mask from {url}: {e}")
-            return None
+                        # Convert to numpy array
+                        img_array = np.array(image)
+                        
+                        # Normalize to 0-1 range
+                        if img_array.dtype == np.uint8:
+                            img_array = img_array.astype(np.float32) / 255.0
+                            
+                        return img_array
+                    else:
+                        print(f"Error loading image from {url}: HTTP {response.status} (attempt {attempt + 1}/{max_retries})")
+                        if attempt < max_retries - 1:
+                            await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                        continue
+                        
+            except Exception as e:
+                print(f"Error loading image from {url}: {e} (attempt {attempt + 1}/{max_retries})")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                continue
+        
+        print(f"Failed to load image from {url} after {max_retries} attempts")
+        return None
     
-    async def _download_all_async(self, data: Dict[str, Any]) -> Tuple[List[np.ndarray], List[np.ndarray], Optional[np.ndarray]]:
-        """Download all images and masks asynchronously while maintaining scene order"""
+    async def _download_mask_async(self, session: aiohttp.ClientSession, url: str, max_retries: int = 3) -> Optional[np.ndarray]:
+        """Download mask asynchronously with retry logic"""
+        for attempt in range(max_retries):
+            try:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                    if response.status == 200:
+                        content = await response.read()
+                        
+                        # Load image from bytes
+                        image = Image.open(io.BytesIO(content))
+                        
+                        # Convert to grayscale
+                        if image.mode != 'L':
+                            image = image.convert('L')
+                        
+                        # Convert to numpy array
+                        mask_array = np.array(image)
+                        
+                        # Normalize to 0-1 range
+                        if mask_array.dtype == np.uint8:
+                            mask_array = mask_array.astype(np.float32) / 255.0
+                            
+                        # Convert to binary mask (threshold at 0.5)
+                        mask_array = (mask_array > 0.5).astype(np.float32)
+                            
+                        return mask_array
+                    else:
+                        print(f"Error loading mask from {url}: HTTP {response.status} (attempt {attempt + 1}/{max_retries})")
+                        if attempt < max_retries - 1:
+                            await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                        continue
+                        
+            except Exception as e:
+                print(f"Error loading mask from {url}: {e} (attempt {attempt + 1}/{max_retries})")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                continue
+        
+        print(f"Failed to load mask from {url} after {max_retries} attempts")
+        return None
+    
+    async def _download_all_async(self, data: Dict[str, Any]) -> Tuple[List[np.ndarray], List[np.ndarray], Optional[np.ndarray], bool]:
+        """Download all images and masks asynchronously with retry logic while maintaining scene order"""
         scenes = data.get("scenes", [])
         scenes.sort(key=lambda x: int(x.get("scene_order", 0)))
         
-        # Create tasks for parallel download with scene order tracking
-        scene_tasks = []
-        mask_tasks = []
-        face_url = data.get("face_url")
-        
-        # Create scene image tasks with order tracking
-        for i, scene in enumerate(scenes):
-            scene_url = scene.get("scene_url")
-            if scene_url:
-                scene_tasks.append((i, self._download_image_async(self._session, scene_url)))
-            else:
-                scene_tasks.append((i, None))
-        
-        # Create mask image tasks with order tracking
-        for i, scene in enumerate(scenes):
-            mask_url = scene.get("mask_url")
-            if mask_url:
-                mask_tasks.append((i, self._download_mask_async(self._session, mask_url)))
-            else:
-                mask_tasks.append((i, None))
-        
-        # Create face image task
-        face_task = self._download_image_async(self._session, face_url) if face_url else None
-        
-        # Execute all downloads in parallel
-        all_tasks = []
-        task_types = []  # Track what each task is
-        
-        # Add scene tasks
-        for order, task in scene_tasks:
-            if task is not None:
-                all_tasks.append(task)
-                task_types.append(('scene', order))
-            else:
-                task_types.append(('scene', order))
-        
-        # Add mask tasks
-        for order, task in mask_tasks:
-            if task is not None:
-                all_tasks.append(task)
-                task_types.append(('mask', order))
-            else:
-                task_types.append(('mask', order))
-        
-        # Add face task
-        if face_task is not None:
-            all_tasks.append(face_task)
-            task_types.append(('face', -1))
-        
-        # Execute all downloads in parallel
-        if all_tasks:
-            results = await asyncio.gather(*all_tasks, return_exceptions=True)
-        else:
-            results = []
-        
-        # Reconstruct results in proper order
-        scene_images = [None] * len(scenes)
-        mask_images = [None] * len(scenes)
-        face_image = None
-        
-        result_idx = 0
-        for task_type, order in task_types:
-            if task_type == 'scene':
-                if order < len(scenes):
-                    if result_idx < len(results):
-                        result = results[result_idx]
-                        if result is not None and not isinstance(result, Exception):
-                            scene_images[order] = result
-                        result_idx += 1
-            elif task_type == 'mask':
-                if order < len(scenes):
-                    if result_idx < len(results):
-                        result = results[result_idx]
-                        if result is not None and not isinstance(result, Exception):
-                            mask_images[order] = result
-                        result_idx += 1
-            elif task_type == 'face':
-                if result_idx < len(results):
-                    result = results[result_idx]
-                    if result is not None and not isinstance(result, Exception):
-                        face_image = result
-                    result_idx += 1
-        
-        # Filter out None values and maintain order
-        scene_images = [img for img in scene_images if img is not None]
-        mask_images = [mask for mask in mask_images if mask is not None]
-        
-        return scene_images, mask_images, face_image
+        # Create a new session for this operation
+        async with aiohttp.ClientSession() as session:
+            # Initialize result arrays
+            scene_images = [None] * len(scenes)
+            mask_images = [None] * len(scenes)
+            face_image = None
+            has_loading_error = False
+            
+            # Download face image first (if exists)
+            face_url = data.get("face_url")
+            if face_url:
+                face_image = await self._download_image_async(session, face_url)
+                if face_image is None:
+                    has_loading_error = True
+                    print("Failed to load face image after retries")
+            
+            # Download all scene images and masks with retry logic
+            max_retry_rounds = 3
+            for retry_round in range(max_retry_rounds):
+                print(f"Download round {retry_round + 1}/{max_retry_rounds}")
+                
+                # Create tasks for failed downloads only
+                scene_tasks = []
+                mask_tasks = []
+                
+                # Add scene image tasks for failed downloads
+                for i, scene in enumerate(scenes):
+                    if scene_images[i] is None:  # Only retry failed downloads
+                        scene_url = scene.get("scene_url")
+                        if scene_url:
+                            scene_tasks.append((i, self._download_image_async(session, scene_url)))
+                
+                # Add mask image tasks for failed downloads
+                for i, scene in enumerate(scenes):
+                    if mask_images[i] is None:  # Only retry failed downloads
+                        mask_url = scene.get("mask_url")
+                        if mask_url:
+                            mask_tasks.append((i, self._download_mask_async(session, mask_url)))
+                
+                # If no failed downloads to retry, break
+                if not scene_tasks and not mask_tasks:
+                    break
+                
+                # Execute retry downloads in parallel
+                all_tasks = []
+                task_types = []
+                
+                # Add scene tasks
+                for order, task in scene_tasks:
+                    all_tasks.append(task)
+                    task_types.append(('scene', order))
+                
+                # Add mask tasks
+                for order, task in mask_tasks:
+                    all_tasks.append(task)
+                    task_types.append(('mask', order))
+                
+                # Execute all retry downloads in parallel
+                if all_tasks:
+                    results = await asyncio.gather(*all_tasks, return_exceptions=True)
+                    
+                    # Process results
+                    result_idx = 0
+                    for task_type, order in task_types:
+                        if result_idx < len(results):
+                            result = results[result_idx]
+                            if result is not None and not isinstance(result, Exception):
+                                if task_type == 'scene':
+                                    scene_images[order] = result
+                                elif task_type == 'mask':
+                                    mask_images[order] = result
+                            result_idx += 1
+                
+                # If this is not the last round, wait before next retry
+                if retry_round < max_retry_rounds - 1:
+                    await asyncio.sleep(1)  # Brief pause between retry rounds
+            
+            # Check for any remaining failures
+            for i in range(len(scenes)):
+                scene_img = scene_images[i]
+                mask_img = mask_images[i]
+                
+                # Check if we have incomplete data
+                if (scene_img is not None and mask_img is None) or (scene_img is None and mask_img is not None):
+                    has_loading_error = True
+                    print(f"Scene {i} has incomplete data after all retries - missing image or mask")
+                
+                # Check if both are missing (this is also an error)
+                if scene_img is None and mask_img is None:
+                    scene_url = scenes[i].get("scene_url")
+                    mask_url = scenes[i].get("mask_url")
+                    if scene_url or mask_url:  # Only error if URLs were provided
+                        has_loading_error = True
+                        print(f"Scene {i} failed to load both image and mask after all retries")
+            
+            # Ensure both arrays have the same length and are properly aligned
+            # Only include scenes where both image and mask are available
+            aligned_scene_images = []
+            aligned_mask_images = []
+            
+            for i in range(len(scenes)):
+                scene_img = scene_images[i]
+                mask_img = mask_images[i]
+                
+                # Only include if both scene and mask are available
+                if scene_img is not None and mask_img is not None:
+                    aligned_scene_images.append(scene_img)
+                    aligned_mask_images.append(mask_img)
+            
+            return aligned_scene_images, aligned_mask_images, face_image, has_loading_error
     
-    def parse_input(self, json_input: str) -> Tuple[torch.Tensor, torch.Tensor, int, torch.Tensor, str, str, str]:
-        """Parse JSON input and return the specified outputs with optimized parallel downloads"""
+    async def parse_input(self, json_input: str) -> Tuple[torch.Tensor, torch.Tensor, int, torch.Tensor, str, str, str, str]:
+        """Parse JSON input and return the specified outputs with async downloads"""
         
         try:
             # Parse JSON input
@@ -282,42 +252,39 @@ class ParseInputNode:
             scenes = data.get("scenes", [])
             total_scenes = len(scenes)
             
+            # Extract scene orders
+            scene_orders = []
+            for scene in scenes:
+                scene_order = scene.get("scene_order", 0)
+                scene_orders.append({"scene_order": scene_order})
+            
+            # Convert scene_orders to JSON string
+            scene_orders_json = json.dumps(scene_orders)
+            
             # Sort scenes by scene_order
             scenes.sort(key=lambda x: int(x.get("scene_order", 0)))
             
-            # Try async download first, fallback to sync if aiohttp not available
-            try:
-                # Initialize session for async downloads
-                if self._session is None:
-                    self._session = aiohttp.ClientSession()
+            # Download all images asynchronously
+            scene_images, mask_images, face_image, has_loading_error = await self._download_all_async(data)
+            
+            # If there was a loading error, return error state
+            if has_loading_error:
+                print("Loading error detected - returning error state")
+                # Return default values on loading error
+                default_scenes = torch.zeros((1, 512, 512, 3), dtype=torch.float32)
+                default_masks = torch.zeros((1, 512, 512), dtype=torch.float32)
+                default_face = torch.zeros((1, 512, 512, 3), dtype=torch.float32)
                 
-                # Download all images asynchronously
-                scene_images, mask_images, face_image = asyncio.run(self._download_all_async(data))
-                    
-            except Exception as e:
-                # Fallback to synchronous downloads if async fails
-                scene_images = []
-                for i, scene in enumerate(scenes):
-                    scene_url = scene.get("scene_url")
-                    if scene_url:
-                        img_array = self.load_image_from_url(scene_url)
-                        if img_array is not None:
-                            scene_images.append(img_array)
-                
-                # Load mask images in order
-                mask_images = []
-                for i, scene in enumerate(scenes):
-                    mask_url = scene.get("mask_url")
-                    if mask_url:
-                        mask_array = self.load_mask_from_url(mask_url)
-                        if mask_array is not None:
-                            mask_images.append(mask_array)
-                
-                # Load face image
-                face_image = None
-                face_url = data.get("face_url")
-                if face_url:
-                    face_image = self.load_image_from_url(face_url)
+                return (
+                    default_scenes,           # Empty scene
+                    default_masks,            # Empty mask
+                    0,                        # No scenes
+                    default_face,             # Empty face
+                    "",                       # Empty generation_id
+                    "",                       # Empty kid_name
+                    "",                       # Empty demo_text
+                    "[]"                     # Empty scene_orders
+                )
             
             # Handle missing face image
             if face_image is None:
@@ -352,7 +319,8 @@ class ParseInputNode:
                 face_image_tensor,        # IMAGE
                 generation_id,            # STRING
                 kid_name,                 # STRING
-                demo_text                 # STRING
+                demo_text,                # STRING
+                scene_orders_json        # STRING
             )
             
         except json.JSONDecodeError as e:
@@ -369,7 +337,8 @@ class ParseInputNode:
                 default_face,             # Empty face
                 "",                       # Empty generation_id
                 "",                       # Empty kid_name
-                ""                        # Empty demo_text
+                "",                       # Empty demo_text
+                "[]"                     # Empty scene_orders
             )
         except Exception as e:
             print(f"Unexpected error: {e}")
@@ -385,5 +354,6 @@ class ParseInputNode:
                 default_face,             # Empty face
                 "",                       # Empty generation_id
                 "",                       # Empty kid_name
-                ""                        # Empty demo_text
+                "",                       # Empty demo_text
+                "[]"                     # Empty scene_orders
             ) 

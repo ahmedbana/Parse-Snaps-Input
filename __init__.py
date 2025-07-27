@@ -5,7 +5,7 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "ParseInputNode": "Parse Input JSON"
+    "ParseInputNode": "SNAPS Parse Input JSON"
 }
 
 __all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS'] 
