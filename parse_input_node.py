@@ -223,14 +223,21 @@ class ParseInputNode:
             scenes = data.get("scenes", [])
             total_scenes = len(scenes)
             
-            # Extract scene orders
+            # Extract scene orders (excluding 0)
             scene_orders = []
             for scene in scenes:
                 scene_order = scene.get("scene_order", 0)
-                scene_orders.append({"scene_order": scene_order})
+                # Convert to int and exclude 0
+                try:
+                    order_int = int(scene_order)
+                    if order_int != 0:
+                        scene_orders.append(str(order_int))
+                except (ValueError, TypeError):
+                    # If scene_order is not a valid number, skip it
+                    continue
             
-            # Convert scene_orders to JSON string
-            scene_orders_json = json.dumps(scene_orders)
+            # Convert to comma-separated string
+            scene_orders_string = ",".join(scene_orders)
             
             # Sort scenes by scene_order
             scenes.sort(key=lambda x: int(x.get("scene_order", 0)))
@@ -254,7 +261,7 @@ class ParseInputNode:
                     "",                       # Empty generation_id
                     "",                       # Empty kid_name
                     "",                       # Empty demo_text
-                    "[]"                     # Empty scene_orders
+                    ""                        # Empty scene_orders
                 )
             
             # Handle missing face image
@@ -291,7 +298,7 @@ class ParseInputNode:
                 generation_id,            # STRING
                 kid_name,                 # STRING
                 demo_text,                # STRING
-                scene_orders_json        # STRING
+                scene_orders_string      # STRING
             )
             
         except json.JSONDecodeError as e:
@@ -309,7 +316,7 @@ class ParseInputNode:
                 "",                       # Empty generation_id
                 "",                       # Empty kid_name
                 "",                       # Empty demo_text
-                "[]"                     # Empty scene_orders
+                ""                        # Empty scene_orders
             )
         except Exception as e:
             print(f"Unexpected error: {e}")
@@ -326,5 +333,5 @@ class ParseInputNode:
                 "",                       # Empty generation_id
                 "",                       # Empty kid_name
                 "",                       # Empty demo_text
-                "[]"                     # Empty scene_orders
+                ""                        # Empty scene_orders
             ) 
