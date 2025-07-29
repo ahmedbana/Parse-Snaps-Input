@@ -243,27 +243,49 @@ class ParseInputNode:
         try:
             # Construct the base path from Story_Name in ComfyUI input folder
             # Try multiple possible input directory locations for cross-platform compatibility
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            comfyui_dir = os.path.dirname(os.path.dirname(script_dir))  # Go up two levels from custom_nodes
+            
             possible_input_dirs = [
                 "input",  # Relative to current directory
                 "/input",  # Absolute path
                 "./input",  # Explicit relative
                 os.path.join(os.getcwd(), "input"),  # Current working directory + input
-                os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "input"),  # Relative to script location
+                os.path.join(script_dir, "..", "input"),  # Relative to script location
+                os.path.join(comfyui_dir, "input"),  # ComfyUI parent directory + input
+                os.path.join(os.path.dirname(comfyui_dir), "input"),  # Parent of ComfyUI directory
+                "/comfyui/input",  # Common symlink location
+                "/runpod-volume/input",  # Direct volume path
+                "/workspace/ComfyUI/input",  # Workspace path
+                "/workspace/input",  # Workspace parent
             ]
             
             # Debug information for Linux server troubleshooting
             print(f"Current working directory: {os.getcwd()}")
-            print(f"Script location: {os.path.dirname(os.path.abspath(__file__))}")
+            print(f"Script location: {script_dir}")
+            print(f"ComfyUI directory: {comfyui_dir}")
             print(f"Story name: {Story_Name}")
             
             base_path = None
             for input_dir in possible_input_dirs:
                 test_path = os.path.join(input_dir, Story_Name)
-                print(f"Checking path: {test_path} (exists: {os.path.exists(test_path)})")
-                if os.path.exists(test_path):
-                    base_path = test_path
-                    print(f"Found story directory at: {base_path}")
-                    break
+                exists = os.path.exists(test_path)
+                is_symlink = os.path.islink(test_path) if exists else False
+                print(f"Checking path: {test_path} (exists: {exists}, symlink: {is_symlink})")
+                
+                if exists:
+                    # If it's a symlink, resolve it and check the real path
+                    if is_symlink:
+                        real_path = os.path.realpath(test_path)
+                        print(f"  -> Resolved symlink to: {real_path}")
+                        if os.path.exists(real_path):
+                            base_path = real_path
+                            print(f"Found story directory at: {base_path}")
+                            break
+                    else:
+                        base_path = test_path
+                        print(f"Found story directory at: {base_path}")
+                        break
             
             if base_path is None:
                 print(f"Story directory not found. Tried paths:")
