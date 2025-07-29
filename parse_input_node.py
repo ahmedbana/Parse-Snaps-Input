@@ -35,7 +35,13 @@ class ParseInputNode:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "json_input": ("STRING", {"default": "", "multiline": True}),
+                "Story_Name": ("STRING", {"default": ""}),
+                "Face_Image": ("STRING", {"default": ""}),
+                "Limit": ("INT", {"default": 10, "min": 1, "max": 100}),
+                "Kid_Name": ("STRING", {"default": ""}),
+                "Demo_Text": ("STRING", {"default": ""}),
+                "Generation_ID": ("STRING", {"default": ""}),
+                "Scene_Orders": ("STRING", {"default": ""}),
             }
         }
     
@@ -209,129 +215,160 @@ class ParseInputNode:
         
         return aligned_scene_images, aligned_mask_images, face_image, has_loading_error
     
-    def parse_input(self, json_input: str) -> Tuple[torch.Tensor, torch.Tensor, int, torch.Tensor, str, str, str, str]:
-        """Parse JSON input and return the specified outputs with async downloads"""
+    def parse_input(self, Story_Name: str, Face_Image: str, Limit: int, Kid_Name: str, Demo_Text: str, Generation_ID: str, Scene_Orders: str) -> Tuple[torch.Tensor, torch.Tensor, int, torch.Tensor, str, str, str, str]:
+        """Parse individual inputs and return the specified outputs"""
         
         try:
-            # Parse JSON input
-            data = json.loads(json_input)
+            # Construct the base path from Story_Name in ComfyUI input folder
+            base_path = os.path.join("input", Story_Name)
+            scenes_path = os.path.join(base_path, "Scenes")
+            masks_path = os.path.join(base_path, "Masks")
             
-            # Extract metadata first (fast)
-            generation_id = data.get("generation_id", "")
-            kid_name = data.get("kid_name", "")
-            demo_text = data.get("demo_text", "")
-            scenes = data.get("scenes", [])
-            total_scenes = len(scenes)
+            # Check if the directories exist
+            if not os.path.exists(scenes_path):
+                print(f"Scenes directory not found: {scenes_path}")
+                return self._return_defaults()
             
-            # Extract scene orders (excluding 0)
-            scene_orders = []
-            for scene in scenes:
-                scene_order = scene.get("scene_order", 0)
-                # Convert to int and exclude 0
-                try:
-                    order_int = int(scene_order)
-                    if order_int != 0:
-                        scene_orders.append(str(order_int))
-                except (ValueError, TypeError):
-                    # If scene_order is not a valid number, skip it
-                    continue
+            if not os.path.exists(masks_path):
+                print(f"Masks directory not found: {masks_path}")
+                return self._return_defaults()
             
-            # Convert to comma-separated string
-            scene_orders_string = ",".join(scene_orders)
+            # Load scene images and masks
+            scene_images, mask_images = self._load_images_from_folders(scenes_path, masks_path, Limit)
             
-            # Sort scenes by scene_order
-            scenes.sort(key=lambda x: int(x.get("scene_order", 0)))
-            
-            # Download all images synchronously
-            scene_images, mask_images, face_image, has_loading_error = self._download_all_sync(data)
-            
-            # If there was a loading error, return error state
-            if has_loading_error:
-                print("Loading error detected - returning error state")
-                # Return default values on loading error
-                default_scenes = torch.zeros((1, 512, 512, 3), dtype=torch.float32)
-                default_masks = torch.zeros((1, 512, 512), dtype=torch.float32)
-                default_face = torch.zeros((1, 512, 512, 3), dtype=torch.float32)
-                
-                return (
-                    default_scenes,           # Empty scene
-                    default_masks,            # Empty mask
-                    0,                        # No scenes
-                    default_face,             # Empty face
-                    "",                       # Empty generation_id
-                    "",                       # Empty kid_name
-                    "",                       # Empty demo_text
-                    ""                        # Empty scene_orders
-                )
-            
-            # Handle missing face image
-            if face_image is None:
-                face_image = np.zeros((512, 512, 3), dtype=np.float32)
-            
-            # Convert lists to numpy arrays for ComfyUI
-            if scene_images:
-                segmented_scenes = np.stack(scene_images, axis=0)
+            # Load face image from URL
+            face_image = None
+            if Face_Image:
+                face_image = self._download_image_sync(Face_Image)
+                if face_image is not None:
+                    # Ensure face_image is 3D (add batch dimension if needed)
+                    if len(face_image.shape) == 3:
+                        face_image = np.expand_dims(face_image, axis=0)
+                    face_image_tensor = torch.from_numpy(face_image)
+                else:
+                    print(f"Failed to load face image from URL: {Face_Image}")
+                    face_image_tensor = torch.zeros((1, 512, 512, 3), dtype=torch.float32)
             else:
-                # Create default empty scene
-                segmented_scenes = np.zeros((1, 512, 512, 3), dtype=np.float32)
+                face_image_tensor = torch.zeros((1, 512, 512, 3), dtype=torch.float32)
+            
+            # Use the input parameters directly
+            total_scenes = len(scene_images) if scene_images else 0
+            generation_id = Generation_ID
+            kid_name = Kid_Name
+            demo_text = Demo_Text
+            scene_orders_string = Scene_Orders
+            
+            # Convert to tensors
+            if scene_images:
+                segmented_scenes = torch.from_numpy(np.stack(scene_images, axis=0))
+            else:
+                segmented_scenes = torch.zeros((1, 512, 512, 3), dtype=torch.float32)
             
             if mask_images:
-                segmented_masks = np.stack(mask_images, axis=0)
+                segmented_masks = torch.from_numpy(np.stack(mask_images, axis=0))
             else:
-                # Create default empty mask
-                segmented_masks = np.zeros((1, 512, 512), dtype=np.float32)
-            
-            # Ensure face_image is 3D (add batch dimension if needed)
-            if len(face_image.shape) == 3:
-                face_image = np.expand_dims(face_image, axis=0)
-            
-            # Convert numpy arrays to PyTorch tensors for ComfyUI
-            segmented_scenes_tensor = torch.from_numpy(segmented_scenes)
-            segmented_masks_tensor = torch.from_numpy(segmented_masks)
-            face_image_tensor = torch.from_numpy(face_image)
+                segmented_masks = torch.zeros((1, 512, 512), dtype=torch.float32)
             
             return (
-                segmented_scenes_tensor,  # IMAGE
-                segmented_masks_tensor,   # MASK
-                total_scenes,             # INT
-                face_image_tensor,        # IMAGE
+                segmented_scenes,         # IMAGE - loaded from Scenes folder
+                segmented_masks,          # MASK - loaded from Masks folder
+                total_scenes,             # INT - count of loaded scenes
+                face_image_tensor,        # IMAGE - will be populated based on Face_Image
                 generation_id,            # STRING
                 kid_name,                 # STRING
                 demo_text,                # STRING
-                scene_orders_string      # STRING
+                scene_orders_string       # STRING
             )
             
-        except json.JSONDecodeError as e:
-            print(f"Error parsing JSON: {e}")
-            # Return default values on error
-            default_scenes = torch.zeros((1, 512, 512, 3), dtype=torch.float32)
-            default_masks = torch.zeros((1, 512, 512), dtype=torch.float32)
-            default_face = torch.zeros((1, 512, 512, 3), dtype=torch.float32)
-            
-            return (
-                default_scenes,           # Empty scene
-                default_masks,            # Empty mask
-                0,                        # No scenes
-                default_face,             # Empty face
-                "",                       # Empty generation_id
-                "",                       # Empty kid_name
-                "",                       # Empty demo_text
-                ""                        # Empty scene_orders
-            )
         except Exception as e:
             print(f"Unexpected error: {e}")
-            # Return default values on error
-            default_scenes = torch.zeros((1, 512, 512, 3), dtype=torch.float32)
-            default_masks = torch.zeros((1, 512, 512), dtype=torch.float32)
-            default_face = torch.zeros((1, 512, 512, 3), dtype=torch.float32)
+            return self._return_defaults()
+    
+    def _load_images_from_folders(self, scenes_path: str, masks_path: str, limit: int) -> Tuple[List[np.ndarray], List[np.ndarray]]:
+        """Load images from Scenes and Masks folders"""
+        scene_images = []
+        mask_images = []
+        
+        try:
+            # Get list of files in both directories with natural sorting
+            import re
             
-            return (
-                default_scenes,           # Empty scene
-                default_masks,            # Empty mask
-                0,                        # No scenes
-                default_face,             # Empty face
-                "",                       # Empty generation_id
-                "",                       # Empty kid_name
-                "",                       # Empty demo_text
-                ""                        # Empty scene_orders
-            ) 
+            def natural_sort_key(text):
+                """Convert a string into a list of string and number chunks.
+                "z23a" -> ["z", 23, "a"]
+                """
+                return [int(c) if c.isdigit() else c.lower() for c in re.split('([0-9]+)', text)]
+            
+            scene_files = [f for f in os.listdir(scenes_path) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+            mask_files = [f for f in os.listdir(masks_path) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+            
+            # Sort using natural sorting
+            scene_files.sort(key=natural_sort_key)
+            mask_files.sort(key=natural_sort_key)
+            
+            # Limit the number of files to process
+            scene_files = scene_files[:limit]
+            mask_files = mask_files[:limit]
+            
+            print(f"Found {len(scene_files)} scene files and {len(mask_files)} mask files")
+            print(f"Scene files order: {scene_files}")
+            print(f"Mask files order: {mask_files}")
+            
+            # Load scene images
+            for scene_file in scene_files:
+                scene_path = os.path.join(scenes_path, scene_file)
+                try:
+                    image = Image.open(scene_path)
+                    if image.mode != 'RGB':
+                        image = image.convert('RGB')
+                    
+                    img_array = np.array(image)
+                    if img_array.dtype == np.uint8:
+                        img_array = img_array.astype(np.float32) / 255.0
+                    
+                    scene_images.append(img_array)
+                    print(f"Loaded scene: {scene_file}")
+                except Exception as e:
+                    print(f"Error loading scene {scene_file}: {e}")
+            
+            # Load mask images
+            for mask_file in mask_files:
+                mask_path = os.path.join(masks_path, mask_file)
+                try:
+                    image = Image.open(mask_path)
+                    if image.mode != 'L':
+                        image = image.convert('L')
+                    
+                    mask_array = np.array(image)
+                    if mask_array.dtype == np.uint8:
+                        mask_array = mask_array.astype(np.float32) / 255.0
+                    
+                    # Convert to binary mask (threshold at 0.5)
+                    mask_array = (mask_array > 0.5).astype(np.float32)
+                    
+                    mask_images.append(mask_array)
+                    print(f"Loaded mask: {mask_file}")
+                except Exception as e:
+                    print(f"Error loading mask {mask_file}: {e}")
+            
+        except Exception as e:
+            print(f"Error loading images from folders: {e}")
+        
+        return scene_images, mask_images
+    
+    def _return_defaults(self) -> Tuple[torch.Tensor, torch.Tensor, int, torch.Tensor, str, str, str, str]:
+        """Return default values when loading fails"""
+        default_scenes = torch.zeros((1, 512, 512, 3), dtype=torch.float32)
+        default_masks = torch.zeros((1, 512, 512), dtype=torch.float32)
+        default_face = torch.zeros((1, 512, 512, 3), dtype=torch.float32)
+        
+        return (
+            default_scenes,           # Empty scene
+            default_masks,            # Empty mask
+            0,                        # No scenes
+            default_face,             # Empty face
+            "",                       # Empty generation_id
+            "",                       # Empty kid_name
+            "",                       # Empty demo_text
+            ""                        # Empty scene_orders
+        ) 
