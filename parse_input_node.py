@@ -242,7 +242,36 @@ class ParseInputNode:
         
         try:
             # Construct the base path from Story_Name in ComfyUI input folder
-            base_path = os.path.join("input", Story_Name)
+            # Try multiple possible input directory locations for cross-platform compatibility
+            possible_input_dirs = [
+                "input",  # Relative to current directory
+                "/input",  # Absolute path
+                "./input",  # Explicit relative
+                os.path.join(os.getcwd(), "input"),  # Current working directory + input
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "input"),  # Relative to script location
+            ]
+            
+            # Debug information for Linux server troubleshooting
+            print(f"Current working directory: {os.getcwd()}")
+            print(f"Script location: {os.path.dirname(os.path.abspath(__file__))}")
+            print(f"Story name: {Story_Name}")
+            
+            base_path = None
+            for input_dir in possible_input_dirs:
+                test_path = os.path.join(input_dir, Story_Name)
+                print(f"Checking path: {test_path} (exists: {os.path.exists(test_path)})")
+                if os.path.exists(test_path):
+                    base_path = test_path
+                    print(f"Found story directory at: {base_path}")
+                    break
+            
+            if base_path is None:
+                print(f"Story directory not found. Tried paths:")
+                for input_dir in possible_input_dirs:
+                    test_path = os.path.join(input_dir, Story_Name)
+                    print(f"  - {test_path}")
+                return self._return_defaults()
+            
             scenes_path = os.path.join(base_path, "Scenes")
             masks_path = os.path.join(base_path, "Masks")
             
