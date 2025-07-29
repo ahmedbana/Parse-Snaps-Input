@@ -54,31 +54,53 @@ class ParseInputNode:
         """Download image synchronously with retry logic"""
         for attempt in range(max_retries):
             try:
-                response = requests.get(url, timeout=10)
+                # Use a session for better connection handling
+                session = requests.Session()
+                session.headers.update({
+                    'User-Agent': 'Mozilla/5.0 (compatible; ComfyUI-ParseInput/1.0)'
+                })
+                
+                response = session.get(url, timeout=30, stream=True)
                 if response.status_code == 200:
                     content = response.content
                     
-                    # Load image from bytes
-                    image = Image.open(io.BytesIO(content))
-                    
-                    # Convert to RGB if necessary
-                    if image.mode != 'RGB':
-                        image = image.convert('RGB')
-                    
-                    # Convert to numpy array
-                    img_array = np.array(image)
-                    
-                    # Normalize to 0-1 range
-                    if img_array.dtype == np.uint8:
-                        img_array = img_array.astype(np.float32) / 255.0
+                    # Load image from bytes with proper error handling
+                    try:
+                        image = Image.open(io.BytesIO(content))
                         
-                    return img_array
+                        # Convert to RGB if necessary
+                        if image.mode != 'RGB':
+                            image = image.convert('RGB')
+                        
+                        # Convert to numpy array
+                        img_array = np.array(image)
+                        
+                        # Normalize to 0-1 range
+                        if img_array.dtype == np.uint8:
+                            img_array = img_array.astype(np.float32) / 255.0
+                            
+                        return img_array
+                    except Exception as e:
+                        print(f"Error processing image from {url}: {e}")
+                        if attempt < max_retries - 1:
+                            time.sleep(2 ** attempt)  # Exponential backoff
+                        continue
                 else:
                     print(f"Error loading image from {url}: HTTP {response.status_code} (attempt {attempt + 1}/{max_retries})")
                     if attempt < max_retries - 1:
                         time.sleep(2 ** attempt)  # Exponential backoff
                     continue
                     
+            except requests.exceptions.Timeout:
+                print(f"Timeout loading image from {url} (attempt {attempt + 1}/{max_retries})")
+                if attempt < max_retries - 1:
+                    time.sleep(2 ** attempt)  # Exponential backoff
+                continue
+            except requests.exceptions.ConnectionError:
+                print(f"Connection error loading image from {url} (attempt {attempt + 1}/{max_retries})")
+                if attempt < max_retries - 1:
+                    time.sleep(2 ** attempt)  # Exponential backoff
+                continue
             except Exception as e:
                 print(f"Error loading image from {url}: {e} (attempt {attempt + 1}/{max_retries})")
                 if attempt < max_retries - 1:
@@ -224,13 +246,17 @@ class ParseInputNode:
             scenes_path = os.path.join(base_path, "Scenes")
             masks_path = os.path.join(base_path, "Masks")
             
-            # Check if the directories exist
-            if not os.path.exists(scenes_path):
-                print(f"Scenes directory not found: {scenes_path}")
-                return self._return_defaults()
-            
-            if not os.path.exists(masks_path):
-                print(f"Masks directory not found: {masks_path}")
+            # Check if the directories exist with proper error handling
+            try:
+                if not os.path.exists(scenes_path):
+                    print(f"Scenes directory not found: {scenes_path}")
+                    return self._return_defaults()
+                
+                if not os.path.exists(masks_path):
+                    print(f"Masks directory not found: {masks_path}")
+                    return self._return_defaults()
+            except (OSError, PermissionError) as e:
+                print(f"Error checking directories: {e}")
                 return self._return_defaults()
             
             # Load scene images and masks
@@ -299,8 +325,24 @@ class ParseInputNode:
                 """
                 return [int(c) if c.isdigit() else c.lower() for c in re.split('([0-9]+)', text)]
             
-            scene_files = [f for f in os.listdir(scenes_path) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
-            mask_files = [f for f in os.listdir(masks_path) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+            # Use case-insensitive file extension matching for cross-platform compatibility
+            def is_image_file(filename):
+                """Check if file is an image with case-insensitive extension"""
+                lower_filename = filename.lower()
+                return any(lower_filename.endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.tif'])
+            
+            # Get files with proper error handling
+            try:
+                scene_files = [f for f in os.listdir(scenes_path) if is_image_file(f)]
+            except (OSError, PermissionError) as e:
+                print(f"Error reading scenes directory {scenes_path}: {e}")
+                scene_files = []
+            
+            try:
+                mask_files = [f for f in os.listdir(masks_path) if is_image_file(f)]
+            except (OSError, PermissionError) as e:
+                print(f"Error reading masks directory {masks_path}: {e}")
+                mask_files = []
             
             # Sort using natural sorting
             scene_files.sort(key=natural_sort_key)
@@ -318,16 +360,17 @@ class ParseInputNode:
             for scene_file in scene_files:
                 scene_path = os.path.join(scenes_path, scene_file)
                 try:
-                    image = Image.open(scene_path)
-                    if image.mode != 'RGB':
-                        image = image.convert('RGB')
-                    
-                    img_array = np.array(image)
-                    if img_array.dtype == np.uint8:
-                        img_array = img_array.astype(np.float32) / 255.0
-                    
-                    scene_images.append(img_array)
-                    print(f"Loaded scene: {scene_file}")
+                    # Use with statement for proper file handling
+                    with Image.open(scene_path) as image:
+                        if image.mode != 'RGB':
+                            image = image.convert('RGB')
+                        
+                        img_array = np.array(image)
+                        if img_array.dtype == np.uint8:
+                            img_array = img_array.astype(np.float32) / 255.0
+                        
+                        scene_images.append(img_array)
+                        print(f"Loaded scene: {scene_file}")
                 except Exception as e:
                     print(f"Error loading scene {scene_file}: {e}")
             
@@ -335,19 +378,20 @@ class ParseInputNode:
             for mask_file in mask_files:
                 mask_path = os.path.join(masks_path, mask_file)
                 try:
-                    image = Image.open(mask_path)
-                    if image.mode != 'L':
-                        image = image.convert('L')
-                    
-                    mask_array = np.array(image)
-                    if mask_array.dtype == np.uint8:
-                        mask_array = mask_array.astype(np.float32) / 255.0
-                    
-                    # Convert to binary mask (threshold at 0.5)
-                    mask_array = (mask_array > 0.5).astype(np.float32)
-                    
-                    mask_images.append(mask_array)
-                    print(f"Loaded mask: {mask_file}")
+                    # Use with statement for proper file handling
+                    with Image.open(mask_path) as image:
+                        if image.mode != 'L':
+                            image = image.convert('L')
+                        
+                        mask_array = np.array(image)
+                        if mask_array.dtype == np.uint8:
+                            mask_array = mask_array.astype(np.float32) / 255.0
+                        
+                        # Convert to binary mask (threshold at 0.5)
+                        mask_array = (mask_array > 0.5).astype(np.float32)
+                        
+                        mask_images.append(mask_array)
+                        print(f"Loaded mask: {mask_file}")
                 except Exception as e:
                     print(f"Error loading mask {mask_file}: {e}")
             
