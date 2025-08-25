@@ -45,8 +45,8 @@ class ParseInputNode:
             }
         }
     
-    RETURN_TYPES = ("IMAGE", "MASK", "INT", "IMAGE", "STRING", "STRING", "STRING", "STRING")
-    RETURN_NAMES = ("segmented_scenes", "segmented_masks", "total_scenes", "face_image", "generation_id", "kid_name", "demo_text", "scene_orders")
+    RETURN_TYPES = ("IMAGE", "IMAGE", "INT", "IMAGE", "STRING", "STRING", "STRING", "STRING")
+    RETURN_NAMES = ("segmented_scenes", "segmented_images", "total_scenes", "face_image", "generation_id", "kid_name", "demo_text", "scene_orders")
     FUNCTION = "parse_input"
     CATEGORY = "Snaps"
     
@@ -342,13 +342,13 @@ class ParseInputNode:
                 segmented_scenes = torch.zeros((1, 512, 512, 3), dtype=torch.float32)
             
             if mask_images:
-                segmented_masks = torch.from_numpy(np.stack(mask_images, axis=0))
+                segmented_images = torch.from_numpy(np.stack(mask_images, axis=0))
             else:
-                segmented_masks = torch.zeros((1, 512, 512), dtype=torch.float32)
+                segmented_images = torch.zeros((1, 512, 512, 3), dtype=torch.float32)
             
             return (
                 segmented_scenes,         # IMAGE - loaded from Scenes folder
-                segmented_masks,          # MASK - loaded from Masks folder
+                segmented_images,         # IMAGE - loaded from Masks folder as images
                 total_scenes,             # INT - count of loaded scenes
                 face_image_tensor,        # IMAGE - will be populated based on Face_Image
                 generation_id,            # STRING
@@ -425,26 +425,23 @@ class ParseInputNode:
                 except Exception as e:
                     print(f"Error loading scene {scene_file}: {e}")
             
-            # Load mask images
+            # Load mask images as RGB images (not as masks)
             for mask_file in mask_files:
                 mask_path = os.path.join(masks_path, mask_file)
                 try:
                     # Use with statement for proper file handling
                     with Image.open(mask_path) as image:
-                        if image.mode != 'L':
-                            image = image.convert('L')
+                        if image.mode != 'RGB':
+                            image = image.convert('RGB')
                         
                         mask_array = np.array(image)
                         if mask_array.dtype == np.uint8:
                             mask_array = mask_array.astype(np.float32) / 255.0
                         
-                        # Convert to binary mask (threshold at 0.5)
-                        mask_array = (mask_array > 0.5).astype(np.float32)
-                        
                         mask_images.append(mask_array)
-                        print(f"Loaded mask: {mask_file}")
+                        print(f"Loaded mask image: {mask_file}")
                 except Exception as e:
-                    print(f"Error loading mask {mask_file}: {e}")
+                    print(f"Error loading mask image {mask_file}: {e}")
             
         except Exception as e:
             print(f"Error loading images from folders: {e}")
@@ -454,16 +451,16 @@ class ParseInputNode:
     def _return_defaults(self) -> Tuple[torch.Tensor, torch.Tensor, int, torch.Tensor, str, str, str, str]:
         """Return default values when loading fails"""
         default_scenes = torch.zeros((1, 512, 512, 3), dtype=torch.float32)
-        default_masks = torch.zeros((1, 512, 512), dtype=torch.float32)
+        default_images = torch.zeros((1, 512, 512, 3), dtype=torch.float32)
         default_face = torch.zeros((1, 512, 512, 3), dtype=torch.float32)
         
         return (
             default_scenes,           # Empty scene
-            default_masks,            # Empty mask
+            default_images,           # Empty image (was mask)
             0,                        # No scenes
             default_face,             # Empty face
             "",                       # Empty generation_id
             "",                       # Empty kid_name
             "",                       # Empty demo_text
             ""                        # Empty scene_orders
-        ) 
+        )

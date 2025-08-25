@@ -58,13 +58,13 @@ def test_parse_input_node():
         result = node.parse_input(json_input)
         
         # Unpack the results
-        segmented_scenes, segmented_masks, total_scenes, face_image, generation_id, kid_name, demo_text = result
+        segmented_scenes, segmented_images, total_scenes, face_image, generation_id, kid_name, demo_text = result
         
         print("✅ Node executed successfully!")
         print()
         print("Results:")
         print(f"  - Segmented Scenes shape: {segmented_scenes.shape}")
-        print(f"  - Segmented Masks shape: {segmented_masks.shape}")
+        print(f"  - Segmented Images shape: {segmented_images.shape}")
         print(f"  - Total Scenes: {total_scenes}")
         print(f"  - Face Image shape: {face_image.shape}")
         print(f"  - Generation ID: '{generation_id}'")
@@ -89,4 +89,4 @@ if __name__ == "__main__":
         print("🎉 All tests passed!")
     else:
         print("💥 Tests failed!")
-        sys.exit(1) 
+        sys.exit(1)
